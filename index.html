@@ -1,31 +1,3 @@
-<?php
-
-$folder = "files/";
-
-$pdfFiles = [];
-
-// Read all files from the files folder
-if (is_dir($folder)) {
-
-    $files = scandir($folder);
-
-    foreach ($files as $file) {
-
-        $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-
-        if ($extension === "pdf") {
-
-            $pdfFiles[] = [
-                "name" => pathinfo($file, PATHINFO_FILENAME),
-                "file" => $folder . $file
-            ];
-
-        }
-    }
-}
-
-?>
-
 <!DOCTYPE html>
 <html lang="en">
 
@@ -171,6 +143,24 @@ if (is_dir($folder)) {
         }
 
 
+        .status-note {
+
+            font-size: 13px;
+
+            color: #777;
+
+            margin-top: 4px;
+
+        }
+
+
+        .status-note.error {
+
+            color: #b91c1c;
+
+        }
+
+
         /* VIEWER */
 
         .viewer {
@@ -242,6 +232,10 @@ if (is_dir($folder)) {
             justify-content: center;
 
             color: #777;
+
+            text-align: center;
+
+            padding: 20px;
 
         }
 
@@ -315,37 +309,7 @@ if (is_dir($folder)) {
         <h2>PDF Files</h2>
 
         <div id="pdfList">
-
-
-            <?php if (empty($pdfFiles)): ?>
-
-                <p>No PDF files found.</p>
-
-
-            <?php else: ?>
-
-                <?php foreach ($pdfFiles as $index => $pdf): ?>
-
-                    <div
-                        class="pdf-item <?= $index === 0 ? 'active' : '' ?>"
-                        onclick="openPDF(
-                            '<?= htmlspecialchars($pdf['file'], ENT_QUOTES) ?>',
-                            '<?= htmlspecialchars($pdf['name'], ENT_QUOTES) ?>',
-                            this
-                        )"
-                    >
-
-                        <span class="pdf-icon">📄</span>
-
-                        <?= htmlspecialchars($pdf['name']) ?>
-
-                    </div>
-
-                <?php endforeach; ?>
-
-            <?php endif; ?>
-
-
+            <p>Loading files…</p>
         </div>
 
     </div>
@@ -361,46 +325,22 @@ if (is_dir($folder)) {
             class="viewer-header"
             id="viewerTitle"
         >
-
-            <?php
-
-            if (!empty($pdfFiles)) {
-
-                echo htmlspecialchars($pdfFiles[0]['name']);
-
-            } else {
-
-                echo "Select a PDF";
-
-            }
-
-            ?>
-
+            Select a PDF
         </div>
 
 
         <div
             id="viewerContainer"
-            class="<?= empty($pdfFiles) ? 'empty' : '' ?>"
+            class="empty"
         >
 
-            <?php if (!empty($pdfFiles)): ?>
+            <div>
 
-                <iframe
-                    src="<?= htmlspecialchars($pdfFiles[0]['file']) ?>"
-                ></iframe>
+                <h2>📄 PDF Viewer</h2>
 
-            <?php else: ?>
+                <p>Select a PDF from the left side.</p>
 
-                <div>
-
-                    <h2>📄 PDF Viewer</h2>
-
-                    <p>Select a PDF from the left side.</p>
-
-                </div>
-
-            <?php endif; ?>
+            </div>
 
         </div>
 
@@ -414,49 +354,149 @@ if (is_dir($folder)) {
 
 <script>
 
+    // ---- CONFIGURE THIS ----
+    // Your site is at https://cjvprasad.github.io/pdf/
+    // which means: owner = cjvprasad, repo = pdf
+    const CONFIG = {
+        owner: "cjvprasad",
+        repo: "pdf",
+        folder: "files",       // the folder in your repo that holds the PDFs
+        branches: ["main", "master"]  // tried in order, whichever your repo uses
+    };
+    // -------------------------
 
-function openPDF(file, name, element) {
+
+    const pdfListEl = document.getElementById("pdfList");
+    const viewerTitle = document.getElementById("viewerTitle");
+    const viewerContainer = document.getElementById("viewerContainer");
+    const uploadInput = document.getElementById("uploadPDF");
 
 
-    // Remove active class
-    document
-        .querySelectorAll(".pdf-item")
-        .forEach(item => {
+    function openPDF(fileUrl, name, element) {
 
-            item.classList.remove("active");
+        // Remove active class from all items
+        document
+            .querySelectorAll(".pdf-item")
+            .forEach(item => {
+                item.classList.remove("active");
+            });
 
+        if (element) {
+            element.classList.add("active");
+        }
+
+        viewerTitle.textContent = name;
+
+        viewerContainer.classList.remove("empty");
+
+        viewerContainer.innerHTML = `
+            <iframe
+                src="${fileUrl}"
+                title="${name}">
+            </iframe>
+        `;
+    }
+
+
+    function renderPdfList(pdfFiles) {
+
+        if (!pdfFiles.length) {
+            pdfListEl.innerHTML = `<p>No PDF files found in "${CONFIG.folder}/".</p>`;
+            return;
+        }
+
+        pdfListEl.innerHTML = "";
+
+        pdfFiles.forEach((pdf, index) => {
+
+            const item = document.createElement("div");
+            item.className = "pdf-item" + (index === 0 ? " active" : "");
+            item.innerHTML = `<span class="pdf-icon">📄</span>${pdf.name}`;
+
+            item.addEventListener("click", () => {
+                openPDF(pdf.url, pdf.name, item);
+            });
+
+            pdfListEl.appendChild(item);
         });
 
-
-    // Add active class
-    element.classList.add("active");
-
-
-    // Change title
-    document.getElementById("viewerTitle")
-        .textContent = name;
+        // Auto-open the first PDF
+        const firstItem = pdfListEl.querySelector(".pdf-item");
+        openPDF(pdfFiles[0].url, pdfFiles[0].name, firstItem);
+    }
 
 
-    // Display PDF
-    const container =
-        document.getElementById("viewerContainer");
+    async function tryFetchBranch(branch) {
+
+        // GitHub API: list contents of the folder on this branch
+        const apiUrl = `https://api.github.com/repos/${CONFIG.owner}/${CONFIG.repo}/contents/${CONFIG.folder}?ref=${branch}`;
+
+        const res = await fetch(apiUrl);
+
+        if (!res.ok) {
+            throw new Error(`Branch "${branch}" folder lookup failed (${res.status})`);
+        }
+
+        const items = await res.json();
+
+        if (!Array.isArray(items)) {
+            throw new Error("Unexpected API response");
+        }
+
+        return items
+            .filter(item => item.type === "file" && item.name.toLowerCase().endsWith(".pdf"))
+            .map(item => ({
+                name: item.name.replace(/\.pdf$/i, ""),
+                // Relative path works whether you're on a custom domain or
+                // the /pdf/ project-pages subpath.
+                url: CONFIG.folder + "/" + item.name
+            }));
+    }
 
 
-    container.classList.remove("empty");
+    async function loadPdfList() {
+
+        let lastError = null;
+
+        for (const branch of CONFIG.branches) {
+            try {
+                const pdfFiles = await tryFetchBranch(branch);
+                renderPdfList(pdfFiles);
+                return;
+            } catch (err) {
+                lastError = err;
+            }
+        }
+
+        // All branches failed — fall back to just trying the relative path directly.
+        pdfListEl.innerHTML = `
+            <p>Couldn't list files automatically.</p>
+            <p class="status-note error">${lastError ? lastError.message : "Unknown error"}</p>
+            <p class="status-note">Check that the repo is public and that "${CONFIG.folder}/" exists in it.</p>
+        `;
+    }
 
 
-    container.innerHTML = `
+    // Manual upload still works as a fallback / override
+    uploadInput.addEventListener("change", function () {
 
-        <iframe
-            src="${file}"
-            title="${name}">
-        </iframe>
+        const file = this.files[0];
 
-    `;
+        if (!file) {
+            return;
+        }
 
-}
+        if (file.type !== "application/pdf") {
+            alert("Please select a PDF file.");
+            return;
+        }
+
+        const pdfUrl = URL.createObjectURL(file);
+        openPDF(pdfUrl, file.name.replace(/\.pdf$/i, ""), null);
+    });
 
 
+    loadPdfList();
 
 </script>
 
